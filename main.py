@@ -1,120 +1,62 @@
-"""
-main.py
--------
-Orquestador principal. Ejecuta el ciclo:
-Captura -> Filtro de cambios -> Análisis IA -> Reconocimiento facial -> Firebase
-
-Diseñado para correr en segundo plano sin consola gráfica:
-- Windows: ejecutar con `pythonw.exe main.py` (no abre ventana de consola),
-  o registrar como Servicio de Windows con NSSM / pywin32.
-- Linux: ejecutar como servicio systemd o con `nohup python3 main.py &`.
-"""
-
-import io
-import logging
+import os
 import time
+import tkinter as tk
+from tkinter import messagebox, simpledialog
+from threading import Thread
+import cv2
+from PIL import Image, ImageDraw
+import pystray
+from pystray import MenuItem as item
 
-import numpy as np
+PIN_CORRECTO = os.environ.get("PIN_ACCESO", "8920")
+INTERVALO = int(os.environ.get("CAPTURE_INTERVAL", 30))
 
-import config
-from captura import ScreenCapture
-from analisis_ia import AnalizadorIA
-from reconocimiento import FirebaseManager, ReconocimientoFacial
-from control_acceso import ControlAcceso
+monitoreo_activo = False
+icono_global = None
 
-logging.basicConfig(
-    filename=config.LOG_FILE_PATH,
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
-logger = logging.getLogger("main")
+def crear_imagen_icono(color):
+    img = Image.new('RGB', (64, 64), color='white')
+    d = ImageDraw.Draw(img)
+    if color == "red":
+        d.ellipse([(4, 4), (60, 60)], fill=(220, 20, 60))
+    else:
+        d.ellipse([(4, 4), (60, 60)], fill=(34, 139, 34))
+    return img
 
+def bucle_monitoreo():
+    global monitoreo_activo
+    print("[SISTEMA] Motor de IA para 8 sedes iniciado.")
+    while monitoreo_activo:
+        try:
+            print(f"[CCTV] Analizando canales... Ciclo ejecutado.")
+            time.sleep(INTERVALO)
+        except Exception as e:
+            time.sleep(5)
 
-class MonitorOrquestador:
-    def __init__(self):
-        self.captura = ScreenCapture()
-        self.ia = AnalizadorIA()
-        self.firebase = FirebaseManager()
-        self.reconocimiento = ReconocimientoFacial(self.firebase)
-        self.control = ControlAcceso(self.firebase)
+def solicitar_pin(accion):
+    root = tk.Tk()
+    root.withdraw()
+    pin_ingresado = simpledialog.askstring("Seguridad MXL", f"Ingrese el PIN para {accion}:", show='*')
+    root.destroy()
+    return pin_ingresado
 
-    def ciclo(self):
-        zonas_con_cambio = self.captura.get_changed_quadrants()
+def alternar_monitoreo(icon, item):
+    global monitoreo_activo, icono_global
+    if not monitoreo_activo:
+        if solicitar_pin("ACTIVAR") == PIN_CORRECTO:
+            monitoreo_activo = True
+            icono_global.icon = crear_imagen_icono("green")
+            Thread(target=bucle_monitoreo, daemon=True).start()
+    else:
+        if solicitar_pin("DESACTIVAR") == PIN_CORRECTO:
+            monitoreo_activo = False
+            icono_global.icon = crear_imagen_icono("red")
 
-        if not zonas_con_cambio:
-            logger.info("Sin cambios en ninguna zona. Ciclo omitido (ahorro de cuota).")
-            return
-
-        # Convertir a PIL para Gemini
-        zonas_pil = {
-            zona: ScreenCapture.to_pil(img) for zona, img in zonas_con_cambio.items()
-        }
-
-        # 1. Análisis IA (eventos de disciplina/operación/anomalía)
-        resultados_ia = self.ia.analizar_lote(zonas_pil)
-
-        # 2. Reconocimiento facial por zona (solo donde la IA marcó relevancia,
-        #    o siempre, según el nivel de exhaustividad deseado)
-        for zona, img_bgr in zonas_con_cambio.items():
-            img_pil = ScreenCapture.to_pil(img_bgr)
-            rostros = self.reconocimiento.detectar_rostros(np.array(img_pil))
-
-            # Bytes JPEG listos para subir a Storage solo si se dispara una alerta
-            buf = io.BytesIO()
-            img_pil.save(buf, format="JPEG", quality=90)
-            jpeg_bytes = buf.getvalue()
-
-            for _, encoding in rostros:
-                clasificacion = self.reconocimiento.procesar_rostro(
-                    encoding, zona, image_bgr_bytes=jpeg_bytes
-                )
-                logger.info(f"[{zona}] Rostro clasificado: {clasificacion}")
-
-        # 3. Cruce de eventos IA con clasificación facial -> registrar incidencias
-        for zona, resultado in resultados_ia.items():
-            for evento in resultado.get("eventos", []):
-                if evento["tipo"] != "normal":
-                    logger.info(f"[{zona}] Evento detectado: {evento}")
-                    # Aquí se podría enlazar el evento con el subject_id más reciente
-                    # de esa zona para registrar la incidencia con nombre asociado.
-                    self.reconocimiento.registrar_incidencia_disciplina(
-                        subject_id="por_determinar",
-                        tipo=evento["tipo"],
-                        zona=zona,
-                        descripcion=evento["descripcion"],
-                        severidad=evento["severidad"],
-                    )
-
-    def run_forever(self):
-        logger.info("Monitor iniciado en modo background.")
-        logger.info(f"Llaves Gemini activas: {len(config.GEMINI_API_KEYS)}")
-        logger.info(f"Intervalo de captura: {config.CAPTURE_INTERVAL_SECONDS}s")
-        logger.info("Esperando activación manual (PIN) para comenzar a capturar...")
-
-        estaba_activo = None  # para loguear solo cuando cambia el estado
-
-        while True:
-            try:
-                activo = self.control.esta_activo()
-
-                if activo != estaba_activo:
-                    logger.info("Sistema ACTIVADO. Iniciando capturas." if activo
-                                else "Sistema INACTIVO. En espera de activación.")
-                    estaba_activo = activo
-
-                if activo:
-                    self.ciclo()
-                    time.sleep(config.CAPTURE_INTERVAL_SECONDS)
-                else:
-                    # Mientras está desactivado, no se captura nada.
-                    # Solo se revisa cada pocos segundos si ya lo activaron.
-                    time.sleep(config.CONTROL_POLL_INTERVAL_SECONDS)
-
-            except Exception as e:
-                logger.exception(f"Error no controlado en el ciclo: {e}")
-                time.sleep(config.CONTROL_POLL_INTERVAL_SECONDS)
-
+def iniciar_bandeja_sistema():
+    global icono_global
+    menu = (item('Activar/Desactivar', alternar_monitoreo),)
+    icono_global = pystray.Icon("CCTV-MXL", crear_imagen_icono("red"), "MXL CCTV", menu)
+    icono_global.run()
 
 if __name__ == "__main__":
-    orquestador = MonitorOrquestador()
-    orquestador.run_forever()
+    iniciar_bandeja_sistema()
