@@ -1,0 +1,13 @@
+# Secretos - NUNCA subir esto a un repo, menos si es público
+.env
+firebase_credentials.json
+*.log
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Sistema
+.DS_Store
