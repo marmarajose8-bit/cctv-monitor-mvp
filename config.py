@@ -81,8 +81,11 @@ cada cuadrícula de cámaras. Identifica:
    por más de 5 minutos (Incidencia de Disciplina).
 2. Puestos clave desatendidos, vacíos o abandonados por más de 5 minutos
    (Alerta de Operación).
-3. Anomalías físicas graves (personas sospechosas merodeando en áreas críticas como
-   combustible/parqueos, obstrucción de cámaras o intrusiones).
+3. Anomalías físicas graves: personas sospechosas merodeando en áreas críticas como
+   combustible/parqueos, obstrucción de cámaras, intrusiones, o cualquier persona
+   tomando/manipulando mercancía, herramientas, dinero u objetos de forma indebida
+   (posible hurto). Sé objetivo: describe solo lo observado, sin acusar directamente;
+   marca "requiere_alerta_inmediata": true cuando sea una situación de alta severidad.
 
 Responde ÚNICAMENTE en formato JSON válido, sin texto adicional, con esta estructura:
 {
@@ -104,3 +107,18 @@ Si no observas ninguna novedad, responde con "eventos": [] y no inventes inciden
 # =========================================================
 RUN_HEADLESS = True  # Sin consola gráfica (background service)
 LOG_FILE_PATH = os.getenv("LOG_FILE_PATH", "monitor.log")
+
+# =========================================================
+# 8. CONTROL DE ACTIVACIÓN (interruptor manual protegido por PIN)
+# =========================================================
+# El PIN NUNCA debe quedar en texto plano en un repo público. Aquí se lee
+# de variable de entorno; el valor por defecto es el que definió el dueño
+# del sistema para uso local/privado.
+CONTROL_PIN = os.getenv("CONTROL_PIN", "8920")
+
+DB_PATH_CONTROL_ACCESO = "control_acceso"          # Estado actual (activo/inactivo)
+DB_PATH_CONTROL_HISTORIAL = "control_acceso_historial"  # Log de cada cambio
+
+# Cada cuántos segundos main.py vuelve a consultar si sigue activo
+# (para reaccionar rápido si se desactiva desde el tray o desde Firebase)
+CONTROL_POLL_INTERVAL_SECONDS = 15

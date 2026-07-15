@@ -1,6 +1,6 @@
 # --- Captura de pantalla y visión local ---
 mss==9.0.1
-opencv-python-headless==4.10.0.84
+opencv-python==4.10.0.84
 Pillow==10.4.0
 numpy==1.26.4
 
@@ -18,3 +18,6 @@ google-generativeai==0.8.3
 
 # --- Configuración y utilidades ---
 python-dotenv==1.0.1
+
+# --- Interruptor de activación (ícono en barra de tareas) ---
+pystray==0.19.5

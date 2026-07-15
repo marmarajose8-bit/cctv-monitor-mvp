@@ -20,6 +20,7 @@ import config
 from captura import ScreenCapture
 from analisis_ia import AnalizadorIA
 from reconocimiento import FirebaseManager, ReconocimientoFacial
+from control_acceso import ControlAcceso
 
 logging.basicConfig(
     filename=config.LOG_FILE_PATH,
@@ -35,6 +36,7 @@ class MonitorOrquestador:
         self.ia = AnalizadorIA()
         self.firebase = FirebaseManager()
         self.reconocimiento = ReconocimientoFacial(self.firebase)
+        self.control = ControlAcceso(self.firebase)
 
     def ciclo(self):
         zonas_con_cambio = self.captura.get_changed_quadrants()
@@ -87,13 +89,30 @@ class MonitorOrquestador:
         logger.info("Monitor iniciado en modo background.")
         logger.info(f"Llaves Gemini activas: {len(config.GEMINI_API_KEYS)}")
         logger.info(f"Intervalo de captura: {config.CAPTURE_INTERVAL_SECONDS}s")
+        logger.info("Esperando activación manual (PIN) para comenzar a capturar...")
+
+        estaba_activo = None  # para loguear solo cuando cambia el estado
 
         while True:
             try:
-                self.ciclo()
+                activo = self.control.esta_activo()
+
+                if activo != estaba_activo:
+                    logger.info("Sistema ACTIVADO. Iniciando capturas." if activo
+                                else "Sistema INACTIVO. En espera de activación.")
+                    estaba_activo = activo
+
+                if activo:
+                    self.ciclo()
+                    time.sleep(config.CAPTURE_INTERVAL_SECONDS)
+                else:
+                    # Mientras está desactivado, no se captura nada.
+                    # Solo se revisa cada pocos segundos si ya lo activaron.
+                    time.sleep(config.CONTROL_POLL_INTERVAL_SECONDS)
+
             except Exception as e:
                 logger.exception(f"Error no controlado en el ciclo: {e}")
-            time.sleep(config.CAPTURE_INTERVAL_SECONDS)
+                time.sleep(config.CONTROL_POLL_INTERVAL_SECONDS)
 
 
 if __name__ == "__main__":

@@ -116,16 +116,40 @@ if errorlevel 1 (
     echo     Tarea "CCTV-Monitor" registrada: arrancara sola en cada inicio de sesion.
 )
 
+REM ---------- 3b. Icono de activacion (barra de tareas) ----------
+echo [3b/4] Registrando el icono de activacion/desactivacion...
+
+schtasks /Query /TN "CCTV-Monitor-Tray" >nul 2>nul
+if not errorlevel 1 (
+    schtasks /Delete /TN "CCTV-Monitor-Tray" /F >nul
+)
+
+schtasks /Create /TN "CCTV-Monitor-Tray" /TR "\"%PYTHONW%\" \"%PROYECTO_DIR%tray.py\"" /SC ONLOGON /RL LIMITED /F >nul
+
+if errorlevel 1 (
+    echo ADVERTENCIA: no se pudo registrar el icono automaticamente.
+) else (
+    echo     Icono "CCTV-Monitor-Tray" registrado: aparecera en la barra de tareas
+    echo     en cada inicio de sesion. IMPORTANTE: el monitoreo arranca APAGADO
+    echo     hasta que actives con el PIN desde ese icono.
+)
+
 REM ---------- 4. Arranque inmediato ----------
-echo [4/4] Iniciando el monitor ahora mismo...
+echo [4/4] Iniciando el monitor y el icono de activacion ahora mismo...
 schtasks /Run /TN "CCTV-Monitor" >nul
+schtasks /Run /TN "CCTV-Monitor-Tray" >nul
 
 echo.
 echo =============================================
 echo  Instalacion completa.
-echo  El monitor ya esta corriendo en segundo plano
-echo  ^(sin ventana visible^) y arrancara solo en cada
-echo  inicio de sesion.
+echo  El motor de monitoreo ya esta corriendo en
+echo  segundo plano (sin ventana visible), pero
+echo  arranca APAGADO por seguridad.
+echo.
+echo  Busca el icono redondo en la barra de tareas
+echo  (junto al reloj) para ACTIVARLO con tu PIN
+echo  cuando empieces tu turno, y DESACTIVARLO
+echo  cuando termines.
 echo =============================================
 echo.
 echo Comandos utiles (opcionales, abrir CMD o PowerShell):
